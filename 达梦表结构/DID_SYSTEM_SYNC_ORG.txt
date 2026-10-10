@@ -1,0 +1,33 @@
+SQL> SELECT DBMS_METADATA.GET_DDL('TABLE','DID_SYSTEM_SYNC_ORG','DLPDATA') FROM DUAL;
+
+LINEID     DBMS_METADATA.GET_DDL('TABLE','DID_SYSTEM_SYNC_ORG','DLPDATA')
+---------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1          CREATE TABLE "DLPDATA"."did_system_sync_org"
+(
+"base_org_id" VARCHAR(255),
+"base_org_code" VARCHAR(255),
+"base_org_name" VARCHAR(500),
+"short_name" VARCHAR(500),
+"base_org_type" VARCHAR(255),
+"parent_base_org_id" VARCHAR(255),
+"sort_no" INT,
+"base_org_desc" VARCHAR(2000),
+"saphr_org_id" VARCHAR(255),
+"manager" VARCHAR(255),
+"address_id" VARCHAR(1000),
+"address_code" VARCHAR(255),
+"primary_business" VARCHAR(2000),
+"org_english_name" VARCHAR(500),
+"linkeman_email" VARCHAR(500),
+"linkman_fax" VARCHAR(255),
+"linkman_phone" VARCHAR(255),
+"func_type" VARCHAR(255),
+"uid" VARCHAR(255),
+"creator_id" VARCHAR(255),
+"create_time" TIMESTAMP(6),
+"tw_insert_time" TIMESTAMP(6),
+"ods_insert_time" TIMESTAMP(6)) STORAGE(ON "DLP_DATA", CLUSTERBTR) ;
+
+used time: 44.967(ms). Execute id is 17970401.
+SQL> SELECT DBMS_METADATA.GET_DDL('TABLE','DID_SYSTEM_SYNC_USER','DLPDATA') FROM DUAL;
+warning: String truncate

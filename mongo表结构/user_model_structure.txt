@@ -1,0 +1,35 @@
+{
+  "_id": "ObjectId",                 // MongoDB自动生成的ID
+  "uid": "string",                   // 全局唯一ID
+  "user_id": "string",               // 用户ID
+  "login_name": "string",            // 用户登录名
+  "real_name": "string",             // 姓名
+  "user_status": "int",              // 用户状态
+  "gender": "string",                // 性别
+  "identity_no": "string",           // 身份证号
+  "birth_day": "string",             // 生日
+  "mobile": "string",                // 手机
+  "office_phone": "string",          // 办公座机
+  "email": "string",                 // 用户邮件
+  "position_code": "string",         // 职位代码
+  "position_name": "string",         // 职位名称
+  "job": "string",                   // 工作
+  "duty": "string",                  // 职责
+  "degree_code": "string",           // 学历代码
+  "comments": "string",              // 注释
+  "base_org_id": "string",           // 组织ID
+  "base_org_name": "string",         // 组织名称
+  "saphr_user_id": "string",         // SAP HR用户ID
+  "password": "string",              // 密码
+  "address": "string",               // 地址
+  "user_type": "string",             // 用户类型
+  "start_date": "string",            // 开始日期
+  "end_date": "string",              // 结束日期
+  "up_id": "string",                 // 上级ID
+  "creator_id": "string",            // 创建者ID
+  "create_time": "DateTime",         // 创建时间
+  "ods_insert_time": "DateTime",     // ODS插入时间
+  "serial_num": "string",            // 流水号
+  "created_at": "int64",             // 创建时间戳
+  "updated_at": "int64"              // 更新时间戳
+}

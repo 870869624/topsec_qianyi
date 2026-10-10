@@ -1,0 +1,37 @@
+LINEID     DBMS_METADATA.GET_DDL('TABLE','DID_SYSTEM_SYNC_USER','DLPDATA')
+---------- --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+1          CREATE TABLE "DLPDATA"."did_system_sync_user"
+(
+"uid" VARCHAR(255),
+"user_id" VARCHAR(255),
+"login_name" VARCHAR(255),
+"real_name" VARCHAR(255),
+"user_status" INT,
+"gender" VARCHAR(50),
+"identity_no" VARCHAR(255),
+"birth_day" VARCHAR(50),
+"mobile" VARCHAR(100),
+"office_phone" VARCHAR(100),
+"email" VARCHAR(500),
+"position_code" VARCHAR(255),
+"position_name" VARCHAR(500),
+"JOB" VARCHAR(500),
+"duty" VARCHAR(500),
+"degree_code" VARCHAR(255),
+"comments" VARCHAR(2000),
+"base_org_id" VARCHAR(255),
+"base_org_name" VARCHAR(500),
+"saphr_user_id" VARCHAR(255),
+"PASSWORD" VARCHAR(1000),
+"address" VARCHAR(2000),
+"user_type" VARCHAR(255),
+"start_date" VARCHAR(100),
+"end_date" VARCHAR(100),
+"up_id" VARCHAR(255),
+"creator_id" VARCHAR(255),
+"create_time" TIMESTAMP(6),
+"ods_insert_time" TIMESTAMP(6),
+"tw_insert_time" TIMESTAMP(6)) STORAGE(ON "DLP_DATA", CLUSTERBTR) ;
+
+used time: 2.725(ms). Execute id is 17970402.
+SQL>

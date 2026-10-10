@@ -1,0 +1,29 @@
+{
+  "_id": "ObjectId",                 // MongoDB自动生成的ID
+  "uid": "string",                   // 全局唯一ID
+  "base_org_id": "string",           // 组织ID
+  "base_org_code": "string",         // 组织code
+  "base_org_name": "string",         // 组织名称
+  "short_name": "string",            // 简称
+  "base_org_type": "string",         // 组织类型
+  "parent_base_org_id": "string",    // 父Id
+  "sort_no": "int",                  // 排序号
+  "base_org_desc": "string",         // 组织描述
+  "saphr_org_id": "string",          // SAP HR组织ID
+  "manager": "string",               // 管理员
+  "address_id": "string",            // 地址ID
+  "address_code": "string",          // 地址编码
+  "primary_business": "string",      // 主营业务
+  "org_english_name": "string",      // 英文名称
+  "linke_man_email": "string",       // 联系人邮箱
+  "linkman_fax": "string",           // 联系人传真
+  "linkman_phone": "string",         // 联系人电话
+  "func_type": "string",             // 功能类型
+  "creator_id": "string",            // 创建者ID
+  "create_time": "DateTime",         // 创建时间
+  "tw_insert_time": "DateTime",      // TW插入时间
+  "ods_insert_time": "DateTime",     // ODS插入时间
+  "serial_num": "string",            // 流水号
+  "created_at": "int64",             // 创建时间戳
+  "updated_at": "int64"              // 更新时间戳
+}
