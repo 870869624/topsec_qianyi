@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-	_ "github.com/godoes/gorm-dameng/dm8" // 注册 database/sql 驱动
 	"shutong/syncbase"
+
+	_ "github.com/godoes/gorm-dameng/dm8" // 注册 database/sql 驱动
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -89,7 +90,7 @@ func run() error {
 	fmt.Println("Redis连接成功")
 
 	// ---------------- 3. 执行数据迁移至Redis缓存 ----------------
-	total, err := syncbase.CountSource(ctx, dm, fullTable)
+	total, err := syncbase.CountSource(ctx, dm, quoteTableName(fullTable))
 	if err != nil {
 		return fmt.Errorf("统计源表行数失败: %w", err)
 	}
@@ -97,8 +98,9 @@ func run() error {
 
 	// 查询达梦数据并写入Redis
 	// 查询需要的字段: uid, login_name, real_name, base_org_name
-	sqlText := fmt.Sprintf("SELECT \"uid\", \"login_name\", \"real_name\", \"base_org_name\" FROM %s", fullTable)
-	
+	// 使用达梦的双引号格式确保表名正确引用
+	sqlText := fmt.Sprintf("SELECT \"uid\", \"login_name\", \"real_name\", \"base_org_name\" FROM %s", quoteTableName(fullTable))
+
 	rows, err := dm.QueryContext(ctx, sqlText)
 	if err != nil {
 		return fmt.Errorf("查询源表失败: %w", err)
@@ -159,6 +161,16 @@ func run() error {
 	return nil
 }
 
+// quoteTableName 将表名格式化为达梦数据库可识别的格式
+// 例如: DLPDATA.did_system_sync_user -> "DLPDATA"."did_system_sync_user"
+func quoteTableName(tableName string) string {
+	parts := strings.Split(tableName, ".")
+	if len(parts) == 2 {
+		return fmt.Sprintf(`"%s"."%s"`, parts[0], parts[1])
+	}
+	return fmt.Sprintf(`"%s"`, tableName)
+}
+
 // setUserInfoToCache 将用户信息设置到缓存
 func setUserInfoToCache(ctx context.Context, redisClient *redis.Client, userInfo *UserInfo) error {
 	if userInfo.LoginName == "" {
@@ -204,13 +216,13 @@ func (r *RedisConfig) SafeAddr() string {
 func loadRedisConfig(envPath string) (*RedisConfig, error) {
 	// 尝试加载配置文件以获取其中的Redis配置
 	var envVars map[string]string
-	
+
 	// 先尝试加载配置文件
-	cfg, err := syncbase.LoadConfig(envPath)
+	_, err := syncbase.LoadConfig(envPath)
 	if err == nil {
 		// 如果syncbase.Config中包含FileVars，我们可以使用它
 		envVars = make(map[string]string)
-		
+
 		// 尝试从配置文件路径读取更多变量
 		absPath, _ := os.Getwd()
 		if envPath != "" {
@@ -225,7 +237,7 @@ func loadRedisConfig(envPath string) (*RedisConfig, error) {
 				}
 			}
 		}
-		
+
 		// 重新读取包含Redis配置的文件
 		if absPath != "" {
 			if f, err := os.Open(absPath); err == nil {
