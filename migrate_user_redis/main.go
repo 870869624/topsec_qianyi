@@ -35,6 +35,9 @@ var (
 	envPath     = flag.String("env", "", "配置文件路径；留空则自动从当前目录逐级向上查找 .env")
 	sourceTable = flag.String("dm-table", defaultSourceTable, "达梦源表全限定名（不带引号）")
 	connTimeout = flag.Duration("conn-timeout", 15*time.Second, "数据库连接超时")
+	dryRun      = flag.Bool("dry-run", false, "试运行模式，不实际写入Redis")
+	batchSize   = flag.Int("batch-size", 1000, "每批次处理的记录数量")
+	limit       = flag.Int("limit", 0, "限制处理的最大记录数量（0表示处理全部）")
 )
 
 func main() {
@@ -64,6 +67,13 @@ func run() error {
 	fmt.Printf("  配置文件    %s\n", cfg.File)
 	fmt.Printf("  达梦        %s\n", cfg.DM.SafeDSN())
 	fmt.Printf("  Redis       %s\n", redisCfg.SafeAddr())
+	if *dryRun {
+		fmt.Printf("  模式        试运行 dry-run，不会写入任何Redis数据\n")
+	}
+	fmt.Printf("  批次大小    %d 条\n", *batchSize)
+	if *limit > 0 {
+		fmt.Printf("  限制数量    %d 条\n", *limit)
+	}
 	fmt.Println()
 
 	// ---------------- 2. 建立连接 ----------------
@@ -94,12 +104,34 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("统计源表行数失败: %w", err)
 	}
-	fmt.Printf("源表 %s 共 %d 条记录，开始写入Redis缓存...\n", fullTable, total)
+
+	// 应用limit限制
+	origTotal := total
+	if *limit > 0 && int64(*limit) < total {
+		origTotal = total
+		total = int64(*limit)
+	}
+	fmt.Printf("源表 %s 共 %d 条记录，开始写入Redis缓存...\n", fullTable, origTotal)
 
 	// 查询达梦数据并写入Redis
 	// 查询需要的字段: uid, login_name, real_name, base_org_name
 	// 使用达梦的双引号格式确保表名正确引用
 	sqlText := fmt.Sprintf("SELECT \"uid\", \"login_name\", \"real_name\", \"base_org_name\" FROM %s", quoteTableName(fullTable))
+
+	// 如果设置了limit，在SQL中也应用限制
+	if *limit > 0 {
+		sqlText += fmt.Sprintf(" WHERE ROWNUM <= %d", *limit)
+	}
+
+	// 如果是试运行，先进行测试写入
+	if *dryRun {
+		fmt.Println("试运行模式: 开始测试Redis写入能力...")
+		testResult := testRedisWriteCapability(ctx, redisClient)
+		if testResult != nil {
+			return fmt.Errorf("试运行测试失败: %w", testResult)
+		}
+		fmt.Println("试运行测试通过，模拟写入Redis缓存...")
+	}
 
 	rows, err := dm.QueryContext(ctx, sqlText)
 	if err != nil {
@@ -132,20 +164,37 @@ func run() error {
 
 		// 只有当登录名不为空时才写入缓存
 		if userInfo.LoginName != "" {
-			// 写入Redis缓存
-			if err := setUserInfoToCache(ctx, redisClient, userInfo); err != nil {
-				failureCount++
-				fmt.Printf("第 %d 条数据写入缓存失败 (登录名: %s): %v\n", scanned, userInfo.LoginName, err)
+			// 根据是否试运行决定是否真正写入Redis
+			if *dryRun {
+				// 试运行模式，仅模拟写入
+				if err := simulateSetUserInfoToCache(ctx, redisClient, userInfo); err != nil {
+					failureCount++
+					fmt.Printf("第 %d 条数据模拟写入缓存失败 (登录名: %s): %v\n", scanned, userInfo.LoginName, err)
+				} else {
+					successCount++
+				}
 			} else {
-				successCount++
+				// 正常模式，真正写入Redis
+				if err := setUserInfoToCache(ctx, redisClient, userInfo); err != nil {
+					failureCount++
+					fmt.Printf("第 %d 条数据写入缓存失败 (登录名: %s): %v\n", scanned, userInfo.LoginName, err)
+				} else {
+					successCount++
+				}
 			}
 		} else {
 			fmt.Printf("第 %d 条数据登录名为空，跳过缓存写入\n", scanned)
 		}
 
 		// 显示进度
-		if scanned%1000 == 0 {
+		if scanned%*batchSize == 0 {
 			fmt.Printf("已处理 %d/%d 条，成功 %d，失败 %d\n", scanned, total, successCount, failureCount)
+		}
+
+		// 如果设置了limit且达到限制，则停止
+		if *limit > 0 && scanned >= *limit {
+			fmt.Printf("已达到限制数量 %d，停止处理\n", *limit)
+			break
 		}
 	}
 
@@ -154,6 +203,9 @@ func run() error {
 	}
 
 	fmt.Printf("\nRedis缓存写入完成！\n")
+	if *dryRun {
+		fmt.Printf("  模式        试运行结束（未写入数据）\n")
+	}
 	fmt.Printf("总计处理: %d 条\n", scanned)
 	fmt.Printf("成功写入: %d 条\n", successCount)
 	fmt.Printf("写入失败: %d 条\n", failureCount)
@@ -185,6 +237,43 @@ func setUserInfoToCache(ctx context.Context, redisClient *redis.Client, userInfo
 
 	// 不设置过期时间，永久存储
 	return redisClient.Set(ctx, key, string(jsonData), time.Duration(0)).Err()
+}
+
+// simulateSetUserInfoToCache 模拟将用户信息设置到缓存（试运行模式）
+func simulateSetUserInfoToCache(ctx context.Context, redisClient *redis.Client, userInfo *UserInfo) error {
+	if userInfo.LoginName == "" {
+		return fmt.Errorf("用户登录名为空，无法设置缓存")
+	}
+
+	// 在试运行模式下，只是测试Redis连接能力而不真正写入
+	return testRedisWriteCapability(ctx, redisClient)
+}
+
+// testRedisWriteCapability 测试Redis写入能力
+func testRedisWriteCapability(ctx context.Context, redisClient *redis.Client) error {
+	testKey := fmt.Sprintf("test:connection:%d", time.Now().Unix())
+	testValue := "test_value"
+
+	// 尝试写入一个测试值
+	err := redisClient.Set(ctx, testKey, testValue, time.Duration(0)).Err()
+	if err != nil {
+		return err
+	}
+
+	// 读取测试值验证
+	result, err := redisClient.Get(ctx, testKey).Result()
+	if err != nil {
+		return err
+	}
+
+	// 删除测试值
+	_ = redisClient.Del(ctx, testKey).Err()
+
+	if result != testValue {
+		return fmt.Errorf("Redis读写测试失败，期望值: %s, 实际值: %s", testValue, result)
+	}
+
+	return nil
 }
 
 // buildLoginNameKey 构建以登录名为键的Redis键

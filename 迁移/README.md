@@ -257,7 +257,8 @@ cd /opt/dm2mongo
 
 ```bash
 # 终端一执行，迁移结束再关闭
-kubectl -n topsec-topaiop port-forward svc/mongodb 27017:32017
+kubectl -n topsec-topaiop port-forward svc/redis 7379:7379
+kubectl -n topsec-topaiop port-forward svc/mongodb 27017:27017
 
 # 以下都在终端二执行
 cd /opt/dm2mongo

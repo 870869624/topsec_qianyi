@@ -8,6 +8,9 @@
 - 将用户信息以JSON格式存储到Redis中
 - 使用固定缓存键格式：`user:login_name:{login_name}`
 - 不设置过期时间，数据永久存储
+- 支持试运行模式，可在不影响生产数据的情况下验证功能
+- 支持分批处理，降低大批量数据处理的风险
+- 支持限制处理数量，便于测试和验证
 
 ## 配置要求
 
@@ -46,6 +49,18 @@ go run ./migrate_user_redis -env /path/to/your/.env
 
 # 指定源表名（如果表名不是默认的 DLPDATA.did_system_sync_user）
 go run ./migrate_user_redis -dm-table YOUR_SCHEMA.YOUR_TABLE_NAME
+
+# 试运行模式（推荐用于首次执行前验证）
+go run ./migrate_user_redis -dry-run
+
+# 分批处理（默认每批1000条）
+go run ./migrate_user_redis -batch-size 500
+
+# 限制处理数量（例如只处理前1000条）
+go run ./migrate_user_redis -limit 1000
+
+# 结合多种参数
+go run ./migrate_user_redis -dry-run -limit 100 -batch-size 50
 ```
 
 ### 2. 编译后运行
@@ -72,6 +87,9 @@ bash build.sh linux/amd64 linux/arm64
 | `-env` | 自动查找 | 配置文件路径 |
 | `-dm-table` | `DLPDATA.did_system_sync_user` | 达梦源表全限定名 |
 | `-conn-timeout` | `15s` | 数据库连接超时时间 |
+| `-dry-run` | `false` | 试运行模式，不实际写入Redis |
+| `-batch-size` | `1000` | 每批次处理的记录数量 |
+| `-limit` | `0` | 限制处理的最大记录数量（0表示处理全部）|
 
 ## 缓存结构
 
@@ -107,6 +125,34 @@ Redis缓存写入完成！
 成功写入: 399800 条
 写入失败: 200 条
 ```
+
+## 安全建议（针对120万数据场景）
+
+对于大规模数据处理，建议按以下步骤进行：
+
+1. **首次运行前**：
+   ```bash
+   # 先进行试运行，验证连接和基本功能
+   go run ./migrate_user_redis -dry-run -limit 100
+   ```
+
+2. **小规模测试**：
+   ```bash
+   # 处理少量数据，验证数据完整性和性能
+   go run ./migrate_user_redis -limit 1000
+   ```
+
+3. **分批验证**：
+   ```bash
+   # 使用较小批次处理，监控系统资源使用
+   go run ./migrate_user_redis -batch-size 500 -limit 5000
+   ```
+
+4. **全量处理**：
+   ```bash
+   # 确认无误后，进行全量数据处理
+   go run ./migrate_user_redis -batch-size 1000
+   ```
 
 ## 注意事项
 
