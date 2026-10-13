@@ -36,8 +36,6 @@ var (
 	sourceTable = flag.String("dm-table", defaultSourceTable, "达梦源表全限定名（不带引号）")
 	connTimeout = flag.Duration("conn-timeout", 15*time.Second, "数据库连接超时")
 	dryRun      = flag.Bool("dry-run", false, "试运行模式，不实际写入Redis")
-	batchSize   = flag.Int("batch-size", 1000, "每批次处理的记录数量")
-	limit       = flag.Int("limit", 0, "限制处理的最大记录数量（0表示处理全部）")
 )
 
 func main() {
@@ -70,10 +68,7 @@ func run() error {
 	if *dryRun {
 		fmt.Printf("  模式        试运行 dry-run，不会写入任何Redis数据\n")
 	}
-	fmt.Printf("  批次大小    %d 条\n", *batchSize)
-	if *limit > 0 {
-		fmt.Printf("  限制数量    %d 条\n", *limit)
-	}
+
 	fmt.Println()
 
 	// ---------------- 2. 建立连接 ----------------
@@ -105,23 +100,13 @@ func run() error {
 		return fmt.Errorf("统计源表行数失败: %w", err)
 	}
 
-	// 应用limit限制
-	origTotal := total
-	if *limit > 0 && int64(*limit) < total {
-		origTotal = total
-		total = int64(*limit)
-	}
-	fmt.Printf("源表 %s 共 %d 条记录，开始写入Redis缓存...\n", fullTable, origTotal)
+	// 显示源表记录总数
+	fmt.Printf("源表 %s 共 %d 条记录，开始写入Redis缓存...\n", fullTable, total)
 
 	// 查询达梦数据并写入Redis
 	// 查询需要的字段: uid, login_name, real_name, base_org_name
 	// 使用达梦的双引号格式确保表名正确引用
 	sqlText := fmt.Sprintf("SELECT \"uid\", \"login_name\", \"real_name\", \"base_org_name\" FROM %s", quoteTableName(fullTable))
-
-	// 如果设置了limit，在SQL中也应用限制
-	if *limit > 0 {
-		sqlText += fmt.Sprintf(" WHERE ROWNUM <= %d", *limit)
-	}
 
 	// 如果是试运行，先进行测试写入
 	if *dryRun {
@@ -186,15 +171,9 @@ func run() error {
 			fmt.Printf("第 %d 条数据登录名为空，跳过缓存写入\n", scanned)
 		}
 
-		// 显示进度
-		if scanned%*batchSize == 0 {
+		// 显示进度 (每1000条显示一次)
+		if scanned%1000 == 0 {
 			fmt.Printf("已处理 %d/%d 条，成功 %d，失败 %d\n", scanned, total, successCount, failureCount)
-		}
-
-		// 如果设置了limit且达到限制，则停止
-		if *limit > 0 && scanned >= *limit {
-			fmt.Printf("已达到限制数量 %d，停止处理\n", *limit)
-			break
 		}
 	}
 

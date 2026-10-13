@@ -1,6 +1,6 @@
 module shutong
 
-go 1.26.0
+go 1.26.7
 
 require (
 	git.cloud.top/aiop/common v0.9.3
