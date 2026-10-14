@@ -15,6 +15,7 @@ import (
 type UserCacheService struct {
 	redisClient *redis.Client
 	model       identity.UserModel
+	orgModel    identity.OrgModel
 }
 
 type UserInfo struct {
@@ -131,7 +132,7 @@ func (s *UserCacheService) UpdateUserInfoByLoginName(ctx context.Context, loginN
 		userInfo := &UserInfo{
 			LoginName:   dbUser.LoginName,
 			RealName:    dbUser.RealName,
-			BaseOrgName: dbUser.BaseOrgName,
+			BaseOrgName: dbUser.BaseOrgName, //这里不再使用user表的BaseOrgName，而是需要使用user表的BaseOrgID去org表查BaseOrgDesc字段
 		}
 
 		if err := s.setUserInfoToCache(ctx, loginName, userInfo); err != nil {

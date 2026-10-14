@@ -94,7 +94,27 @@ func run() error {
 	}
 	fmt.Println("Redis连接成功")
 
-	// ---------------- 3. 执行数据迁移至Redis缓存 ----------------
+	// ---------------- 3. 清除已有缓存 ----------------
+	if !*dryRun {
+		fmt.Println("开始清除已有 Redis 缓存...")
+		cleared, err := clearExistingCache(ctx, redisClient)
+		if err != nil {
+			return fmt.Errorf("清除缓存失败: %w", err)
+		}
+		fmt.Printf("已清除 %d 个缓存键\n", cleared)
+	} else {
+		fmt.Println("试运行模式: 跳过清除缓存")
+	}
+
+	// ---------------- 4. 加载 org 表映射 (base_org_id -> base_org_desc) ----------------
+	fmt.Println("加载组织表映射...")
+	orgMap, err := loadOrgMap(ctx, dm, cfg, fullTable)
+	if err != nil {
+		return fmt.Errorf("加载组织表映射失败: %w", err)
+	}
+	fmt.Printf("加载组织映射 %d 条\n", len(orgMap))
+
+	// ---------------- 5. 执行数据迁移至Redis缓存 ----------------
 	total, err := syncbase.CountSource(ctx, dm, quoteTableName(fullTable))
 	if err != nil {
 		return fmt.Errorf("统计源表行数失败: %w", err)
@@ -104,9 +124,9 @@ func run() error {
 	fmt.Printf("源表 %s 共 %d 条记录，开始写入Redis缓存...\n", fullTable, total)
 
 	// 查询达梦数据并写入Redis
-	// 查询需要的字段: uid, login_name, real_name, base_org_name
+	// 查询需要的字段: uid, login_name, real_name, base_org_id, base_org_name
 	// 使用达梦的双引号格式确保表名正确引用
-	sqlText := fmt.Sprintf("SELECT \"uid\", \"login_name\", \"real_name\", \"base_org_name\" FROM %s", quoteTableName(fullTable))
+	sqlText := fmt.Sprintf("SELECT \"uid\", \"login_name\", \"real_name\", \"base_org_id\", \"base_org_name\" FROM %s", quoteTableName(fullTable))
 
 	// 如果是试运行，先进行测试写入
 	if *dryRun {
@@ -130,8 +150,8 @@ func run() error {
 	failureCount := 0
 
 	for rows.Next() {
-		var uid, loginName, realName, baseOrgName sql.NullString
-		err := rows.Scan(&uid, &loginName, &realName, &baseOrgName)
+		var uid, loginName, realName, baseOrgID, baseOrgName sql.NullString
+		err := rows.Scan(&uid, &loginName, &realName, &baseOrgID, &baseOrgName)
 		if err != nil {
 			failureCount++
 			fmt.Printf("读取第 %d 行数据失败: %v\n", scanned+1, err)
@@ -140,11 +160,12 @@ func run() error {
 
 		scanned++
 
-		// 构建用户信息
+		// 构建用户信息：优先用 org 表的 base_org_desc，降级用 user 表的 base_org_name
+		resolvedOrgName := resolveOrgName(syncbase.Str(baseOrgID), syncbase.Str(baseOrgName), orgMap)
 		userInfo := &UserInfo{
 			LoginName:   syncbase.Str(loginName),
 			RealName:    syncbase.Str(realName),
-			BaseOrgName: syncbase.Str(baseOrgName),
+			BaseOrgName: resolvedOrgName,
 		}
 
 		// 只有当登录名不为空时才写入缓存
@@ -253,6 +274,86 @@ func testRedisWriteCapability(ctx context.Context, redisClient *redis.Client) er
 	}
 
 	return nil
+}
+
+// resolveOrgName 解析组织名称：优先用 org 表的 base_org_desc，没查到则降级用 user 表的 base_org_name
+func resolveOrgName(baseOrgID, baseOrgName string, orgMap map[string]string) string {
+	if baseOrgID == "" {
+		// 没有 base_org_id，直接返回 user 表的 base_org_name
+		return baseOrgName
+	}
+	// 尝试从 org 映射中查找
+	if desc, ok := orgMap[baseOrgID]; ok && desc != "" {
+		return desc
+	}
+	// 没查到，降级用 user 表的 base_org_name
+	return baseOrgName
+}
+
+// loadOrgMap 从 org 表加载 base_org_id -> base_org_desc 映射
+func loadOrgMap(ctx context.Context, dm *sql.DB, cfg *syncbase.Config, userTable string) (map[string]string, error) {
+	// 从 userTable 提取模式名 (如 DLPDATA)
+	parts := strings.Split(userTable, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("源表名格式错误，应为 模式.表名: %s", userTable)
+	}
+	schema := parts[0]
+	orgTable := fmt.Sprintf(`"%s"."did_system_sync_org"`, schema)
+
+	sqlText := fmt.Sprintf("SELECT \"base_org_id\", \"base_org_desc\" FROM %s", orgTable)
+	rows, err := dm.QueryContext(ctx, sqlText)
+	if err != nil {
+		return nil, fmt.Errorf("查询组织表失败: %w", err)
+	}
+	defer rows.Close()
+
+	orgMap := make(map[string]string)
+	for rows.Next() {
+		var orgID, orgDesc sql.NullString
+		if err := rows.Scan(&orgID, &orgDesc); err != nil {
+			continue // 跳过解析失败的行
+		}
+		if orgID.Valid && orgID.String != "" {
+			desc := ""
+			if orgDesc.Valid {
+				desc = orgDesc.String
+			}
+			orgMap[orgID.String] = desc
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历组织表结果集出错: %w", err)
+	}
+	return orgMap, nil
+}
+
+// clearExistingCache 清除所有 user:login_name:* 模式的缓存键
+func clearExistingCache(ctx context.Context, redisClient *redis.Client) (int64, error) {
+	var cleared int64
+	var cursor uint64
+	pattern := "user:login_name:*"
+
+	// 使用 SCAN 命令安全遍历（不会阻塞 Redis）
+	for {
+		keys, nextCursor, err := redisClient.Scan(ctx, cursor, pattern, 1000).Result()
+		if err != nil {
+			return cleared, fmt.Errorf("SCAN 命令失败: %w", err)
+		}
+
+		if len(keys) > 0 {
+			delCount, err := redisClient.Del(ctx, keys...).Result()
+			if err != nil {
+				return cleared, fmt.Errorf("删除缓存键失败: %w", err)
+			}
+			cleared += delCount
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return cleared, nil
 }
 
 // buildLoginNameKey 构建以登录名为键的Redis键
